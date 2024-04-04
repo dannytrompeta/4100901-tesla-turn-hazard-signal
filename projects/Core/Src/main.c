@@ -43,19 +43,128 @@
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint32_t left_toggles = 0;
+uint32_t right_toggles = 0;
+uint32_t left_last_press_tick = 0;
+uint32_t right_last_press_tick = 0;
+rebote = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+//uint8_t Read_Button(BUTTON_GPIO_PORT, BUTTON_PIN);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/*void wait_100(void)
+{
+	static wait_tick = 0;
+	  if(wait_tick < HAL_GetTick()){
+		  wait_tick = HAL_GetTick() + 100;
+	  }
+}*/
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+
+
+	  if (GPIO_Pin == S1_Pin){
+
+			  right_toggles = 0;
+			  HAL_UART_Transmit(&huart2, "S1\r\n", 4, 10);
+			  if (HAL_GetTick() < (left_last_press_tick + 300)) { // if last press was in the last 300ms
+						left_toggles = 0xFFFFFF; // a long time toggling (infinite)
+					} else {
+						left_toggles = 6; //3 blinks
+					}
+			  left_last_press_tick = HAL_GetTick();
+
+	    } else if (GPIO_Pin == S2_Pin){
+
+				  left_toggles = 0;
+					  HAL_UART_Transmit(&huart2, "S2\r\n", 4, 10);
+					  if (HAL_GetTick() < (right_last_press_tick + 300)) { // if last press was in the last 300ms
+								right_toggles = 0xFFFFFF; // a long time toggling (infinite)
+							} else {
+								right_toggles = 6;	//3 blinks
+							}
+					  right_last_press_tick = HAL_GetTick();
+
+	      } else if (GPIO_Pin == S3_Pin){
+
+						if(left_toggles > 0 || right_toggles > 0){
+							left_toggles = 0;  //si la direccional izquierda esta encendida se apaga
+							right_toggles = 0; //si la direccional derecha esta encendida se apaga
+
+						} else {
+							left_toggles = 0xFFFFFF;
+							right_toggles = 0xFFFFFF;
+						}
+						HAL_UART_Transmit(&huart2, "S3\r\n", 4, 10);
+
+	      	  	  }
+
+}
+
+void heartbeat(void)
+{
+	static uint32_t heartbeat_tick = 0;
+	if (heartbeat_tick < HAL_GetTick()){
+		heartbeat_tick = HAL_GetTick() + 500;
+		HAL_GPIO_TogglePin(D1_GPIO_Port, D1_Pin);
+	}
+}
+
+uint8_t Read_Button(BUTTON_GPIO_PORT, BUTTON_PIN)
+{
+	uint32_t current_time = HAL_GetTick();
+
+	if (current_time - rebote > 1000) {
+	        if (HAL_GPIO_ReadPin(BUTTON_GPIO_PORT, BUTTON_PIN) == GPIO_PIN_RESET) {
+	            rebote = current_time;
+            return 1; // Se considera que el botón ha sido presionado después del debounce
+        }
+    }
+    return 0; // El botón no ha sido presionado o es un rebote
+}
+
+void turn_signal_left(void)
+{
+	static uint32_t turn_toggle_tick = 0;
+	if (turn_toggle_tick < HAL_GetTick()){
+		if(left_toggles > 0){
+			turn_toggle_tick = HAL_GetTick() + 500;
+			HAL_GPIO_TogglePin(D3_GPIO_Port, D3_Pin);
+
+			left_toggles--;
+		} else{
+			HAL_GPIO_WritePin(D3_GPIO_Port, D3_Pin, 1);
+		}
+
+	}
+}
+
+void turn_signal_right(void)
+{
+	static uint32_t turn_toggle_tick = 0;
+	if (turn_toggle_tick < HAL_GetTick()){
+		if(right_toggles > 0){
+			turn_toggle_tick = HAL_GetTick() + 500;
+			HAL_GPIO_TogglePin(D4_GPIO_Port, D4_Pin);
+			right_toggles--;
+		} else{
+			HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, 1);
+		}
+
+	}
+}
+
 
 /* USER CODE END 0 */
 
@@ -96,6 +205,15 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  heartbeat();
+//	  turn_signal_left();
+//	  turn_signal_right();
+	  if(Read_Button(S1_GPIO_Port, S1_Pin) == 0){
+		  turn_signal_left();
+	  }
+	  if(Read_Button(S2_GPIO_Port, S2_Pin) == 0){
+	  turn_signal_right();
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -222,6 +340,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : S3_Pin */
+  GPIO_InitStruct.Pin = S3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(S3_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : D4_Pin */
   GPIO_InitStruct.Pin = D4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -230,6 +354,9 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(D4_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
   HAL_NVIC_SetPriority(EXTI1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
